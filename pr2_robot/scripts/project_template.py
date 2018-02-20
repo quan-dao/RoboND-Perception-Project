@@ -69,13 +69,21 @@ def pcl_callback(pcl_msg):
     cloud_filtered = voxel_filter.filter()
 
     # TODO: PassThrough Filter
-    pass_through = cloud_filtered.make_passthrough_filter()
+    pass_through_z = cloud_filtered.make_passthrough_filter()
     filter_axis = 'z'
-    pass_through.set_filter_field_name(filter_axis)
+    pass_through_z.set_filter_field_name(filter_axis)
     axis_min = 0.62
     axis_max = 1.0
-    pass_through.set_filter_limits(axis_min, axis_max)
-    cloud_filtered = pass_through.filter()
+    pass_through_z.set_filter_limits(axis_min, axis_max)
+    cloud_filtered = pass_through_z.filter()
+
+    pass_through_y = cloud_filtered.make_passthrough_filter()
+    filter_axis_2 = 'y'
+    pass_through_y.set_filter_field_name(filter_axis_2)
+    axis_min_2 = -0.6
+    axis_max_2 = 0.3
+    pass_through_y.set_filter_limits(axis_min_2, axis_max_2)
+    cloud_filtered = pass_through_y.filter()
 
     # TODO: RANSAC Plane Segmentation
     seg = cloud_filtered.make_segmenter()
