@@ -56,8 +56,8 @@ def pcl_callback(pcl_msg):
     
     # TODO: Statistical Outlier Filtering
     statiscal_filter = cloud.make_statistical_outlier_filter()  # create a filter object
-    statiscal_filter.set_mean_k(20)  # set number of neighbor points involving in analyzing a given points
-    x = 1  # mean distance threshold's scale factor
+    statiscal_filter.set_mean_k(10)  # set number of neighbor points involving in analyzing a given points
+    x = 0.5  # mean distance threshold's scale factor
     # Any points have mean distance larger than threshold + x * standard deviation are considered outlier
     statiscal_filter.set_std_dev_mul_thresh(x)  
     cloud_filtered = statiscal_filter.filter()  # call the filter 
@@ -72,7 +72,7 @@ def pcl_callback(pcl_msg):
     pass_through = cloud_filtered.make_passthrough_filter()
     filter_axis = 'z'
     pass_through.set_filter_field_name(filter_axis)
-    axis_min = 0.55
+    axis_min = 0.62
     axis_max = 1.0
     pass_through.set_filter_limits(axis_min, axis_max)
     cloud_filtered = pass_through.filter()
@@ -93,9 +93,9 @@ def pcl_callback(pcl_msg):
     tree = white_cloud.make_kdtree()
     extracted_cluster = white_cloud.make_EuclideanClusterExtraction()  # create a cluster extraction object
     # set tolerances for distacnce threshold
-    extracted_cluster.set_ClusterTolerance(0.01)
-    extracted_cluster.set_MinClusterSize(20)
-    extracted_cluster.set_MaxClusterSize(2000)
+    extracted_cluster.set_ClusterTolerance(0.025)
+    extracted_cluster.set_MinClusterSize(100)
+    extracted_cluster.set_MaxClusterSize(500)
     extracted_cluster.set_SearchMethod(tree)  # search the k-d tree for cluster
     cluster_indices = extracted_cluster.Extract()  # extract list of points for each cluster. 
 
@@ -124,36 +124,36 @@ def pcl_callback(pcl_msg):
 
 # Exercise-3 TODOs:
 	# Create empty lists to receive object lables and object point cloud
-    detected_objects = []
-    detected_objects_labels = []
-    for index, pts_list in enumerate(cluster_indices):
-		# Grab the points for the cluster from the extracted outliers (ransac_objects)
-        pcl_cluster = ransac_objects.extract(pts_list)
-        # Convert pcl to ROS
-        ros_cluster = pcl_to_ros(pcl_cluster)
-        # Extract histogram feature
-        chists = compute_color_histograms(ros_cluster, using_hsv=True)
-        normals = get_normals(ros_cluster)
-        nhists = compute_normal_histograms(normals)
-        feature = np.concatenate((chists, nhists))
-        # Make the prediction, retrieve the label for the cluster and add this label to detected_objects_labels list
-        prediction = clf.predict(scaler.transform(feature.reshape(1,-1)))
-        label = encoder.inverse_transform(prediction)[0]
-        detected_objects_labels.append(label)
-    	# Publish a label into RViz
-    	label_pos = list(white_cloud[pts_list[0]])
-    	label_pos[2] += .4
-    	object_markers_pub.publish(make_label(label,label_pos, index))
-    	# Add the detected object to the list of detected objects.
-        do = DetectedObject()
-        do.label = label
-        do.cloud = ros_cluster
-        detected_objects.append(do)
+  #   detected_objects = []
+  #   detected_objects_labels = []
+  #   for index, pts_list in enumerate(cluster_indices):
+		# # Grab the points for the cluster from the extracted outliers (ransac_objects)
+  #       pcl_cluster = ransac_objects.extract(pts_list)
+  #       # Convert pcl to ROS
+  #       ros_cluster = pcl_to_ros(pcl_cluster)
+  #       # Extract histogram feature
+  #       chists = compute_color_histograms(ros_cluster, using_hsv=True)
+  #       normals = get_normals(ros_cluster)
+  #       nhists = compute_normal_histograms(normals)
+  #       feature = np.concatenate((chists, nhists))
+  #       # Make the prediction, retrieve the label for the cluster and add this label to detected_objects_labels list
+  #       prediction = clf.predict(scaler.transform(feature.reshape(1,-1)))
+  #       label = encoder.inverse_transform(prediction)[0]
+  #       detected_objects_labels.append(label)
+  #   	# Publish a label into RViz
+  #   	label_pos = list(white_cloud[pts_list[0]])
+  #   	label_pos[2] += .4
+  #   	object_markers_pub.publish(make_label(label,label_pos, index))
+  #   	# Add the detected object to the list of detected objects.
+  #       do = DetectedObject()
+  #       do.label = label
+  #       do.cloud = ros_cluster
+  #       detected_objects.append(do)
 
-    # Print out the number and names of detected object
-    rospy.loginfo('Detected {} objects: {}'.format(len(detected_objects_labels), detected_objects_labels))
-    # Publish the list of detected objects
-    detected_objects_pub.publish(detected_objects)
+  #   # Print out the number and names of detected object
+  #   rospy.loginfo('Detected {} objects: {}'.format(len(detected_objects_labels), detected_objects_labels))
+  #   # Publish the list of detected objects
+  #   detected_objects_pub.publish(detected_objects)
    
     # Suggested location for where to invoke your pr2_mover() function within pcl_callback()
     # Could add some logic to determine whether or not your object detections are robust
@@ -213,15 +213,15 @@ if __name__ == '__main__':
     # TODO: Create Publishers
     ransac_pub = rospy.Publisher("/ransac_segmentation", pc2.PointCloud2, queue_size=1)
     cluster_pub = rospy.Publisher("/extracted_cluster", pc2.PointCloud2, queue_size=1)
-    object_markers_pub = rospy.Publisher("/object_markers", Marker, queue_size=1)
-    detected_objects_pub = rospy.Publisher("/detected_objects", DetectedObjectsArray, queue_size=1)
+    # object_markers_pub = rospy.Publisher("/object_markers", Marker, queue_size=1)
+    # detected_objects_pub = rospy.Publisher("/detected_objects", DetectedObjectsArray, queue_size=1)
 
-    # TODO: Load Model From disk
-    model = pickle.load(open('model.sav', 'rb'))
-    clf = model['classifier']
-    encoder = LabelEncoder()
-    encoder.classes_ = model['classes']
-    scaler = model['scaler']
+    # # TODO: Load Model From disk
+    # model = pickle.load(open('model.sav', 'rb'))
+    # clf = model['classifier']
+    # encoder = LabelEncoder()
+    # encoder.classes_ = model['classes']
+    # scaler = model['scaler']
 
     # Initialize color_list
     get_color_list.color_list = []
