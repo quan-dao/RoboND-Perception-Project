@@ -166,8 +166,8 @@ def pcl_callback(pcl_msg):
     # Suggested location for where to invoke your pr2_mover() function within pcl_callback()
     # Could add some logic to determine whether or not your object detections are robust
     # 3 individual objects >>> check the number of object detected >>> check the duplication of objects' label
-    if len(detected_objects) == 3:
-    	if len(set(detected_objects_labels)) == 3:  # use set to eleminate duplicate versions of any labels
+    if len(detected_objects) == 5:
+    	if len(set(detected_objects_labels)) == 5:  # use set to eleminate duplicate versions of any labels
     		# no coincident lables happened
     		# call pr2_mover()
     		try:
@@ -247,7 +247,7 @@ def pr2_mover(object_list):
      #        print "Service call failed: %s"%e
 
     # TODO: Output your request parameters into output yaml file
-    send_to_yaml('output_sence_1.yaml', dict_list)
+    send_to_yaml('output_sence_2.yaml', dict_list)
 
 
 
@@ -267,7 +267,7 @@ if __name__ == '__main__':
     detected_objects_pub = rospy.Publisher("/detected_objects", DetectedObjectsArray, queue_size=1)
 
     # TODO: Load Model From disk
-    model = pickle.load(open('model.sav', 'rb'))
+    model = pickle.load(open('model_sence_2.sav', 'rb'))
     clf = model['classifier']
     encoder = LabelEncoder()
     encoder.classes_ = model['classes']
