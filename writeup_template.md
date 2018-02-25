@@ -3,43 +3,65 @@
 
 ---
 
-
-# Required Steps for a Passing Submission:
-1. Extract features and train an SVM model on new objects (see `pick_list_*.yaml` in `/pr2_robot/config/` for the list of models you'll be trying to identify). 
-2. Write a ROS node and subscribe to `/pr2/world/points` topic. This topic contains noisy point cloud data that you must work with.
-3. Use filtering and RANSAC plane fitting to isolate the objects of interest from the rest of the scene.
-4. Apply Euclidean clustering to create separate clusters for individual items.
-5. Perform object recognition on these objects and assign them labels (markers in RViz).
-6. Calculate the centroid (average in x, y and z) of the set of points belonging to that each object.
-7. Create ROS messages containing the details of each object (name, pick_pose, etc.) and write these messages out to `.yaml` files, one for each of the 3 scenarios (`test1-3.world` in `/pr2_robot/worlds/`).  [See the example `output.yaml` for details on what the output should look like.](https://github.com/udacity/RoboND-Perception-Project/blob/master/pr2_robot/config/output.yaml)  
-8. Submit a link to your GitHub repo for the project or the Python code for your perception pipeline and your output `.yaml` files (3 `.yaml` files, one for each test world).  You must have correctly identified 100% of objects from `pick_list_1.yaml` for `test1.world`, 80% of items from `pick_list_2.yaml` for `test2.world` and 75% of items from `pick_list_3.yaml` in `test3.world`.
-9. Congratulations!  Your Done!
-
-# Extra Challenges: Complete the Pick & Place
-7. To create a collision map, publish a point cloud to the `/pr2/3d_map/points` topic and make sure you change the `point_cloud_topic` to `/pr2/3d_map/points` in `sensors.yaml` in the `/pr2_robot/config/` directory. This topic is read by Moveit!, which uses this point cloud input to generate a collision map, allowing the robot to plan its trajectory.  Keep in mind that later when you go to pick up an object, you must first remove it from this point cloud so it is removed from the collision map!
-8. Rotate the robot to generate collision map of table sides. This can be accomplished by publishing joint angle value(in radians) to `/pr2/world_joint_controller/command`
-9. Rotate the robot back to its original state.
-10. Create a ROS Client for the “pick_place_routine” rosservice.  In the required steps above, you already created the messages you need to use this service. Checkout the [PickPlace.srv](https://github.com/udacity/RoboND-Perception-Project/tree/master/pr2_robot/srv) file to find out what arguments you must pass to this service.
-11. If everything was done correctly, when you pass the appropriate messages to the `pick_place_routine` service, the selected arm will perform pick and place operation and display trajectory in the RViz window
-12. Place all the objects from your pick list in their respective dropoff box and you have completed the challenge!
-13. Looking for a bigger challenge?  Load up the `challenge.world` scenario and see if you can get your perception pipeline working there!
-
-## [Rubric](https://review.udacity.com/#!/rubrics/1067/view) Points
-### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
+# [Rubric](https://review.udacity.com/#!/rubrics/1067/view) Points
+## Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
 ---
-### Writeup / README
+## Writeup / README
 
-#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  
+### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  
 
 You're reading it!
 
 ### Exercise 1, 2 and 3 pipeline implemented
-#### 1. Complete Exercise 1 steps. Pipeline for filtering and RANSAC plane fitting implemented.
 
-#### 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented.  
+## 1. Complete Exercise 1 steps. Pipeline for filtering and RANSAC plane fitting implemented.
+### 1.1 Statistical Outlier Filtering
+The original cloud recieved by subscribing to the topic `/pr2/world/points` is shown in `Fig. 1`. As can be seen in this figure, this cloud contained a lot of sparse outliers (marked by the black ellipse) which can negatively effect geometry features of the cloud such as surface normal vectors. These noisy data are removed thanks to the Statistical Outlier filter. The idea of this filter is that any point which has its mean distance to its neighbors exceeding a threshold is considered an outlier. Such threshold is defined by the global distance mean plus a standard deviation assuming the set of every point in the cloud has the Gaussian distribution.
 
-#### 2. Complete Exercise 3 Steps.  Features extracted and SVM trained.  Object recognition implemented.
+The Statistical Outlier filter is implemented as following
+```
+	statiscal_filter = cloud.make_statistical_outlier_filter()  # create a filter object
+    statiscal_filter.set_mean_k(10)  # set number of neighbor points involving in calculating the mean distance of a particular point
+    x = 0.5  # standard deviation scale factor
+    statiscal_filter.set_std_dev_mul_thresh(x)  
+    cloud_filtered = statiscal_filter.filter()  # call the filter
+```
+In the implementation above, the number of points involving in deriving the mean distance of any single point is set to 10 which means the neighbor of an arbitrary point is defined by 10 points being closest to it. In addition, the set's standard deviation is scaled by a factor of `x` (set to 0.5) prior to being added to the global distance mean.
+
+The point cloud of the first world outputed by this filter is displayed in `Fig.2`.
+
+Obviously, the sparse outliers in `Fig.1` are removed.
+
+### 1.2 Voxel Filtering
+Accessing the `size` attribute of point cloud returned by the Statistical Outlier filter, the number of data point in this cloud is 492299 which is relatively large. This number should be reduced to speed up the perception pipeline. Keep in mind that a dense point cloud is made of many data points which contain overlapping information, compared to their neighbors. Therefore, the point cloud of our interest can be made less dense by eleminating those overlapping data points. This can be done by the Voxel filter which represents all data points in a volume element (a.k.a a leaf) by a single point. The information of this point is the mean of evey point it replaces. The size of the filtered point could is controlled by the size of a volume element.
+
+The implemenetation of this filter is
+```
+	voxel_filter = cloud_filtered.make_voxel_grid_filter()
+    leaf_size = 0.01  # set the length of a single size of volume element
+    voxel_filter.set_leaf_size(leaf_size, leaf_size, leaf_size)  # set the size of the volume element
+    cloud_filtered = voxel_filter.filter()
+```
+As implied in the code above, the Voxel filter has one parameter which is the lenght of one size of a volume element. However, a volume element is not necessary a cubic, so this filter can take 3 parameters to define the shape of a volume element. The truly important point of this filter is the balance between the reduction of data points and the preservation point cloud key information (e.g. the overall shape and color of objects in the scene). With the cubic leaf having size of `0.01m`, the size of the cloud is reduced to 95647 (19% of the original size).
+
+### 1.3 Pass Through Filtering
+In segmatation for tablle top objects, everything beneat the top fo the table is unnecessary. Therefore, the data points beneat the table top can be eleminate to save the computation effort later in the segmentation. To this end, a Pass Through is carried out as following.
+```
+	pass_through_z = cloud_filtered.make_passthrough_filter()
+    filter_axis = 'z'
+    pass_through_z.set_filter_field_name(filter_axis)  # set the axis along which the filtering is performed
+    axis_min = 0.62
+    axis_max = 1.0
+    pass_through_z.set_filter_limits(axis_min, axis_max)  # set the interval in which data points are allowed to pass
+    cloud_filtered = pass_through_z.filter()
+```
+The Pass Through filter has 3 parameters, namely the filter's axis, the minimum and maximum value of the coordinate which is filtered. The result of z-axis Pass Through filter is shown in `Fig.3`. In this figure, there are the presence of part of two dropboxes beside a thin layer of the table's top and scene objects. This dropboxes part is not the objects of interest and can not be eleminated the plane segmentation. As a result, it will cause the mal function of the clustering. For this reason, the second Pass Through which is performed along y-axis is called in to filter this dropboxes part out. Because the dropboxes' center are placed at `0.71` and `-0.71` along y-axis (these value is given by `dropbox.yaml` in folder `/pr2_robot/config`), the interval of y-axis Pass Through filter is set to `[-0.55, 0.55]`. The filtered point cloud shown in `Fig.4` now no longer contained the dropboxes part. 
+
+
+## 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented.  
+
+## 3. Complete Exercise 3 Steps.  Features extracted and SVM trained.  Object recognition implemented.
 Here is an example of how to include an image in your writeup.
 
 ![demo-1](https://user-images.githubusercontent.com/20687560/28748231-46b5b912-7467-11e7-8778-3095172b7b19.png)
