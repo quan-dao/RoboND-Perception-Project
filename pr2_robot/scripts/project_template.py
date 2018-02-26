@@ -60,8 +60,9 @@ def pcl_callback(pcl_msg):
     x = 0.5  # mean distance threshold's scale factor
     # Any points have mean distance larger than threshold + x * standard deviation are considered outlier
     statiscal_filter.set_std_dev_mul_thresh(x)  
-    cloud_filtered = statiscal_filter.filter()  # call the filter 
-
+    cloud_filtered = statiscal_filter.filter()  # call the filter
+    # statiscal_cloud = cloud_filtered  # for writeup 
+    
     # TODO: Voxel Grid Downsampling
     voxel_filter = cloud_filtered.make_voxel_grid_filter()
     leaf_size = 0.01  # set size of volume element
@@ -80,8 +81,8 @@ def pcl_callback(pcl_msg):
     pass_through_y = cloud_filtered.make_passthrough_filter()
     filter_axis_2 = 'y'
     pass_through_y.set_filter_field_name(filter_axis_2)
-    axis_min_2 = -0.5
-    axis_max_2 = 0.5
+    axis_min_2 = -0.55
+    axis_max_2 = 0.55
     pass_through_y.set_filter_limits(axis_min_2, axis_max_2)
     cloud_filtered = pass_through_y.filter()
 
@@ -89,7 +90,7 @@ def pcl_callback(pcl_msg):
     seg = cloud_filtered.make_segmenter()
     seg.set_model_type(pcl.SACMODEL_PLANE)  # set segmentation model
     seg.set_method_type(pcl.SAC_RANSAC)  # set segmentation method
-    max_distance = 0.001  # max distance for a point to be considered in the model
+    max_distance = 0.005  # max distance for a point to be considered in the model
     seg.set_distance_threshold(max_distance)
     inliers, coefficients = seg.segment()  # call the segment func to get inlier indices
 
@@ -102,8 +103,8 @@ def pcl_callback(pcl_msg):
     extracted_cluster = white_cloud.make_EuclideanClusterExtraction()  # create a cluster extraction object
     # set tolerances for distacnce threshold
     extracted_cluster.set_ClusterTolerance(0.025)
-    extracted_cluster.set_MinClusterSize(100)
-    extracted_cluster.set_MaxClusterSize(500)
+    extracted_cluster.set_MinClusterSize(50)
+    extracted_cluster.set_MaxClusterSize(1000)
     extracted_cluster.set_SearchMethod(tree)  # search the k-d tree for cluster
     cluster_indices = extracted_cluster.Extract()  # extract list of points for each cluster. 
 
@@ -123,11 +124,11 @@ def pcl_callback(pcl_msg):
     cluster_cloud.from_list(color_cluster_point_list)
 
     # TODO: Convert PCL data to ROS messages
-    ros_ransac_objects = pcl_to_ros(ransac_objects)
+    # ros_cloud = pcl_to_ros(yz_pass_through_cloud)
     ros_cluster_clould = pcl_to_ros(cluster_cloud)
 
     # TODO: Publish ROS messages
-    ransac_pub.publish(ros_ransac_objects)
+    # ransac_pub.publish(ros_cloud)
     cluster_pub.publish(ros_cluster_clould)
 
 # Exercise-3 TODOs:
@@ -166,12 +167,17 @@ def pcl_callback(pcl_msg):
     # Suggested location for where to invoke your pr2_mover() function within pcl_callback()
     # Could add some logic to determine whether or not your object detections are robust
     # 3 individual objects >>> check the number of object detected >>> check the duplication of objects' label
-    if len(detected_objects) == 5:
-    	if len(set(detected_objects_labels)) == 5:  # use set to eleminate duplicate versions of any labels
+    
+    # TODO: Get/Read parameters
+    object_list_param = rospy.get_param('/object_list')
+    num_objects = len(object_list_param)
+
+    if len(detected_objects) == num_objects:
+    	if len(set(detected_objects_labels)) == num_objects:  # use set to eleminate duplicate versions of any labels
     		# no coincident lables happened
     		# call pr2_mover()
     		try:
-        		pr2_mover(detected_objects)
+        		pr2_mover(detected_objects, object_list_param, dropbox_param)
     		except rospy.ROSInterruptException:
         		pass
         else:
@@ -181,14 +187,10 @@ def pcl_callback(pcl_msg):
 
  
 # function to load parameters and request PickPlace service
-def pr2_mover(object_list):
+def pr2_mover(object_list, object_list_param, dropbox_param):
 
     # TODO: Initialize variables
     dict_list = []
-
-    # TODO: Get/Read parameters
-    object_list_param = rospy.get_param('/object_list')
-    dropbox_param = rospy.get_param('/dropbox')
 
     # TODO: Parse parameters into individual variables
     sence_object_name = [object_list_param[i]['name'] for i in range(len(object_list_param))]
@@ -247,7 +249,7 @@ def pr2_mover(object_list):
      #        print "Service call failed: %s"%e
 
     # TODO: Output your request parameters into output yaml file
-    send_to_yaml('output_sence_2.yaml', dict_list)
+    send_to_yaml('output_1.yaml', dict_list)
 
 
 
@@ -267,7 +269,7 @@ if __name__ == '__main__':
     detected_objects_pub = rospy.Publisher("/detected_objects", DetectedObjectsArray, queue_size=1)
 
     # TODO: Load Model From disk
-    model = pickle.load(open('model_sence_2.sav', 'rb'))
+    model = pickle.load(open('model_reg_scene_1.sav', 'rb'))
     clf = model['classifier']
     encoder = LabelEncoder()
     encoder.classes_ = model['classes']
@@ -275,6 +277,9 @@ if __name__ == '__main__':
 
     # Initialize color_list
     get_color_list.color_list = []
+
+    # Get dropbox parameters
+    dropbox_param = rospy.get_param('/dropbox')
 
     # TODO: Spin while node is not shutdown
     while not rospy.is_shutdown():
