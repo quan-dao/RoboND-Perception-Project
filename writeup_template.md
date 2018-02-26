@@ -46,7 +46,7 @@ The implemenetation of this filter is
 As implied in the code above, the Voxel filter has one parameter which is the lenght of one size of a volume element. However, a volume element is not necessary a cubic, so this filter can take 3 parameters to define the shape of a volume element. The truly important point of this filter is the balance between the reduction of data points and the preservation point cloud key information (e.g. the overall shape and color of objects in the scene). With the cubic leaf having size of `0.01m`, the size of the cloud is reduced to 95647 (19% of the original size).
 
 ### 1.3 Pass Through Filtering
-In segmatation for tablle top objects, everything beneat the top fo the table is unnecessary. Therefore, the data points beneat the table top can be eleminate to save the computation effort later in the segmentation. To this end, a Pass Through is carried out as following.
+In segmatation for tablle top objects which will be carried out in the next section, everything beneat the top fo the table is unnecessary. Therefore, the data points beneat the table top can be eleminate to save the computation effort later in the segmentation. To this end, a Pass Through is carried out as following.
 ```
 	pass_through_z = cloud_filtered.make_passthrough_filter()
     filter_axis = 'z'
@@ -58,8 +58,40 @@ In segmatation for tablle top objects, everything beneat the top fo the table is
 ```
 The Pass Through filter has 3 parameters, namely the filter's axis, the minimum and maximum value of the coordinate which is filtered. The result of z-axis Pass Through filter is shown in `Fig.3`. In this figure, there are the presence of part of two dropboxes beside a thin layer of the table's top and scene objects. This dropboxes part is not the objects of interest and can not be eleminated the plane segmentation. As a result, it will cause the mal function of the clustering. For this reason, the second Pass Through which is performed along y-axis is called in to filter this dropboxes part out. Because the dropboxes' center are placed at `0.71` and `-0.71` along y-axis (these value is given by `dropbox.yaml` in folder `/pr2_robot/config`), the interval of y-axis Pass Through filter is set to `[-0.55, 0.55]`. The filtered point cloud shown in `Fig.4` now no longer contained the dropboxes part. 
 
+### 1.4 Plane fitting
+To isolate the objects on the top of the table, the table top's surface needs to be identified first. A segmentation using RANSAC method for segmenting the `plane` contained in the filtered cloud is construted below
+```
+    seg = cloud_filtered.make_segmenter()  # create segmentation object
+    seg.set_model_type(pcl.SACMODEL_PLANE)  # set the model for segmentation
+    seg.set_method_type(pcl.SAC_RANSAC)  # set segmentation method
+    max_distance = 0.005  # max distance for a point to be considered in the model
+    seg.set_distance_threshold(max_distance)
+    inliers, coefficients = seg.segment()  # call the segment func to get inlier indices
+```  
+The outputs of this segmentation process are the points in the model for segemtation (the plane representing the table top in this case) and the coefficient of the polinomial expressing this model. Because the outliers in this plane segmentation are what represent the table top objects, the cloud cotains only these objects are extracted from the filtered cloud by
+```
+ransac_objects = cloud_filtered.extract(inliers, negative=True)
+```
+This cloud of objects is displayed in `Fig.5`.   
 
-## 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented.  
+## 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented. 
+After being filterd and segmented, the resulted cloud now contains only data points of table top objects. However, these data points currently does not represent any individual object because they are still mixed together. On the other word, those data points of the same object must be seperated from others. This is done by the Euclidean clustering algorithm. For the algorithm to be able to execute, the feature-rich objects cloud is converted to a white cloud which contains only spatial coordinates, then rearranged into a k-d tree.
+```
+    white_cloud = XYZRGB_to_XYZ(ransac_objects)  # create spatial point cloud
+    tree = white_cloud.make_kdtree()  # k-d tree construction
+```    
+Next, the Euclidean algorithm's paramters are set.
+```
+    extracted_cluster.set_ClusterTolerance(0.025)
+    extracted_cluster.set_MinClusterSize(50)
+    extracted_cluster.set_MaxClusterSize(1000)
+    extracted_cluster.set_SearchMethod(tree)
+```
+It is worth to notice that the Cluster Tolerance plays a critical role in the accuracy of the clustering process. If it is too small, large object (like the buiscuit) can be divided into many clusters. On the other hand, if the Cluster Tolerance is too big, near by objects can be mixed in one cluster. Finally, the clustering alogrithm is executed.
+```
+    cluster_indices = extracted_cluster.Extract()  # extract lists of points for each cluster.
+```
+The command above a list. This list itself contains a number of lists each of which associate with a cluster. The clustering result in displayed in `Fig.6`  
 
 ## 3. Complete Exercise 3 Steps.  Features extracted and SVM trained.  Object recognition implemented.
 Here is an example of how to include an image in your writeup.
