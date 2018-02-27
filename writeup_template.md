@@ -13,13 +13,14 @@
 [img9]: ./misc/model_scene_3_confusion_matrix_nfold_5.PNG
 [img10]: ./misc/classifi_scene_1.PNG
 [img11]: ./misc/classifi_scene_2.PNG
-[img12]: ./misc/classifi_scene_13.PNG
+[img12]: ./misc/classifi_scene_3.PNG
 
 ## 1. Complete Exercise 1 steps. Pipeline for filtering and RANSAC plane fitting implemented.
 ### 1.1 Statistical Outlier Filtering
 The original cloud recieved by subscribing to the topic `/pr2/world/points` is shown in Fig.1. 
 
 ![alt text][img1]
+
 *Fig.1 The cloud publised by `/pr2/world/points`*
 
 As can be seen in this figure, this cloud contained a lot of sparse outliers (marked by the black ellipse) which can negatively effect geometry features of the cloud such as surface normal vectors. These noisy data are removed thanks to the Statistical Outlier filter. The idea of this filter is that any point which has its mean distance to its neighbors exceeding a threshold is considered an outlier. Such threshold is defined by the global distance mean plus a standard deviation assuming the set of every point in the cloud has the Gaussian distribution.
@@ -36,6 +37,7 @@ In the implementation above, the number of points involving in deriving the mean
 
 The point cloud of the first world outputed by this filter is displayed in Fig.2.
 ![alt text][img2]
+
 *Fig.2 The cloud filtered by Statistical Outlier filter*
 
 Obviously, the sparse outliers in Fig.1 are removed.
@@ -66,11 +68,13 @@ In segmatation for tablle top objects which will be carried out in the next sect
 The Pass Through filter has 3 parameters, namely the filter's axis, the minimum and maximum value of the coordinate which is filtered. The result of z-axis Pass Through filter is shown in Fig.3. 
 
 ![alt text][img3]
+
 *Fig.3 Result of z-axis pass through filter*
 
 In this figure, there are the presence of part of two dropboxes (the red and green dots at the tip of the two dropboxes) beside a thin layer of the table's top and scene objects. This dropboxes part is not the objects of interest and can not be eleminated the plane segmentation. As a result, it will cause the mal function of the clustering. For this reason, the second Pass Through which is performed along y-axis is called in to filter this dropboxes part out. Because the dropboxes' center are placed at `0.71` and `-0.71` along y-axis (these value is given by `dropbox.yaml` in folder `/pr2_robot/config`), the interval of y-axis Pass Through filter is set to `[-0.55, 0.55]`. The filtered point cloud shown in Fig.4 now no longer contained the dropboxes part.
 
 ![alt text][img4]
+
 *Fig.4 Dropboxes' tip eleminated by adding an y-axis pass thorugh filter* 
 
 ### 1.4 Plane fitting
@@ -90,6 +94,7 @@ ransac_objects = cloud_filtered.extract(inliers, negative=True)
 This cloud of objects is displayed in Fig.5.   
 
 ![alt text][img5]
+
 *Fig.5 Objects segmented by RANSAC algorithm*
 
 ## 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented. 
@@ -112,6 +117,7 @@ It is worth to notice that the Cluster Tolerance plays a critical role in the ac
 The command above returns a list. This list itself contains a number of lists, each of which associate with a cluster. The clustering result in displayed in Fig.6.
 
 ![alt text][img6]
+
 *Fig.6 Clusters of table top objects in scene 1*
 
 ## 3. Complete Exercise 3 Steps.  Features extracted and SVM trained.  Object recognition implemented.
@@ -184,21 +190,27 @@ The histograms in this section are created by `numpy` library's `histogram()`. T
 Using the objects' features prepared by the previous section (the color and normal direction histogram), a Support Vector Machine is employed to classify objects on the table top based on these features. The SVM's kernel is chosen to be `linear` and the number of folds of cross validation is set to `25` for the first two scenes and `5` for scene 3. For each scene, the SVM is trained with the training set consituted by `70` samples of each object in the scene. The confusion matrix of classification model using in each scene is plotted Fig.7-9.      
 
 ![alt text][img7]
+
 *Fig.7 Confusion matrixes of Scene 1's model* 
 
 ![alt text][img8]
+
 *Fig.8 Confusion matrixes of Scene 2's model*
 
 ![alt text][img9]
+
 *Fig.9 Confusion matrixes of Scene 3's model*
 
 The results of objects recognition process performed by the models used in each scene are displayed in Fig.10-12.
 
 ![alt text][img10]
+
 *Fig.10 Objects recognized by Scene 1's model*
 
 ![alt text][img11]
+
 *Fig.11 Objects recognized by Scene 2's model*
 
 ![alt text][img12]
+
 *Fig.12 Objects recognized by Scene 2's model*
