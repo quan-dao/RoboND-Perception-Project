@@ -1,106 +1,143 @@
-[![Udacity - Robotics NanoDegree Program](https://s3-us-west-1.amazonaws.com/udacity-robotics/Extra+Images/RoboND_flag.png)](https://www.udacity.com/robotics)
-# 3D Perception
-Before starting any work on this project, please complete all steps for [Exercise 1, 2 and 3](https://github.com/udacity/RoboND-Perception-Exercises). At the end of Exercise-3 you have a pipeline that can identify points that belong to a specific object.
+# Project: 3D Perception Project
+---
 
-In this project, you must assimilate your work from previous exercises to successfully complete a tabletop pick and place operation using PR2.
+[//]: # (Image References)
+[img1]: ./misc/original_cloud.PNG
+[img2]: ./misc/statistical_filtering.PNG
+[img3]: ./misc/z_passthrough_only.PNG
+[img4]: ./misc/yz_passthrough.PNG
+[img5]: ./misc/seg_scene_1.PNG
+[img6]: ./misc/cluster_scene_1.PNG
+[img7]: ./misc/model_scene_1_confusion_matrix.PNG
+[img8]: ./misc/model_scene_2_confusion_matrix.PNG
+[img9]: ./misc/model_scene_3_confusion_matrix_nfold_5.PNG
+[img10]: ./misc/classifi_scene_1.PNG
+[img11]: ./misc/classifi_scene_2.PNG
+[img12]: ./misc/classifi_scene_3.PNG
 
-The PR2 has been outfitted with an RGB-D sensor much like the one you used in previous exercises. This sensor however is a bit noisy, much like real sensors.
+This project is to develop an object detection pipeline to recognize objects placed on a table from incoming pointcloud (obtained by RGB-D camera of PR2 robot). This pipeline is made of 
 
-Given the cluttered tabletop scenario, you must implement a perception pipeline using your work from Exercises 1,2 and 3 to identify target objects from a so-called “Pick-List” in that particular order, pick up those objects and place them in corresponding dropboxes.
+* Statistical Outlier Filter
 
-# Project Setup
-For this setup, catkin_ws is the name of active ROS Workspace, if your workspace name is different, change the commands accordingly
-If you do not have an active ROS workspace, you can create one by:
+* Voxel Filter
 
-```sh
-$ mkdir -p ~/catkin_ws/src
-$ cd ~/catkin_ws/
-$ catkin_make
+* Passthrough Filter
+
+* Plane detection using RANSAC
+
+* Clustering
+ 
+* Object detector made of Support Vector Machine (SVM)
+
+This pipeline is implemented in the function `pcl_callback()` in the file `./pr2_robot/scripts/project_template.py`
+
+To install this project, you can follow `Installation.md`.
+
+## 1. Filtering and RANSAC plane fitting
+### 1.1 Statistical Outlier Filtering
+The original cloud recieved by subscribing to the topic `/pr2/world/points` is shown in Fig.1. 
+
+![alt text][img1]
+
+*Fig.1 The cloud publised by `/pr2/world/points`*
+
+As can be seen in this figure, this cloud contained a lot of sparse outliers (marked by the black ellipse) which can negatively effect geometry features of the cloud such as surface normal vectors. These noisy data are removed thanks to the **Statistical Outlier filter**. The _idea of this filter_ is that any point which has its mean distance to its neighbors exceeding a threshold is considered an outlier. Such threshold is defined by the global distance mean plus a standard deviation assuming the set of every point in the cloud has the Gaussian distribution.
+
+In the current implementation, the number of points involving in deriving the mean distance of any single point is set to 10 which means the neighbor of an arbitrary point is defined by 10 points being closest to it. In addition, the set's standard deviation is scaled by a factor of `x` (set to 0.5) prior to being added to the global distance mean.
+
+The point cloud of the first world outputed by this filter is displayed in Fig.2.
+![alt text][img2]
+
+*Fig.2 The cloud filtered by Statistical Outlier filter*
+
+Obviously, the sparse outliers in Fig.1 are removed.
+
+### 1.2 Voxel Filtering
+Accessing the `size` attribute of point cloud returned by the Statistical Outlier filter, the number of data point in this cloud is _492 299_ which is relatively large. This number should be reduced to speed up the perception pipeline. Keep in mind that a dense point cloud is made of many data points which contain overlapping information, compared to their neighbors. Therefore, the point cloud of our interest can be made less dense by eleminating those overlapping data points. This can be done by the **Voxel filter** which represents all data points in a volume element (a.k.a a leaf) by a single point. The information of this point is the mean of evey point it replaces. The size of the filtered point could is controlled by the size of a volume element.
+
+The Voxel filter has one parameter which is the lenght of one size of a volume element. However, a volume element is not necessary a cubic, so this filter can take 3 parameters to define the shape of a volume element. The truly _important point_ of this filter is the balance between the reduction of data points and the preservation point cloud key information (e.g. the overall shape and color of objects in the scene). With the cubic leaf having size of `0.01m`, the size of the cloud is reduced to 95647 (19% of the original size).
+
+### 1.3 Pass Through Filtering
+In segmatation for table top objects which will be carried out in the next section, everything beneat the top fo the table is unnecessary. Therefore, the data points beneat the table top can be eleminate to save the computation effort later in the segmentation. To this end, a **Passthrough Filter** is used.
+
+The Pass Through filter has 3 parameters, namely the filter's axis, the minimum and maximum value of the coordinate which is filtered. The result of z-axis Pass Through filter is shown in Fig.3. 
+
+![alt text][img3]
+
+*Fig.3 Result of z-axis pass through filter*
+
+In this figure, there are the presence of part of two dropboxes (the red and green dots at the tip of the two dropboxes) beside a thin layer of the table's top and scene objects. This dropboxes part is not the objects of interest and can not be eleminated the plane segmentation. As a result, it will cause the mal function of the clustering. For this reason, the second Pass Through which is performed along y-axis is called in to filter this dropboxes part out. Because the dropboxes' center are placed at `0.71` and `-0.71` along y-axis (these value is given by `dropbox.yaml` in folder `/pr2_robot/config`), the interval of y-axis Pass Through filter is set to `[-0.55, 0.55]`. The filtered point cloud shown in Fig.4 now no longer contained the dropboxes part.
+
+![alt text][img4]
+
+*Fig.4 Dropboxes' tip eleminated by adding an y-axis pass thorugh filter* 
+
+### 1.4 Plane fitting
+To isolate the objects on the top of the table, the table top's surface needs to be identified first. A segmentation using **RANSAC** method for segmenting the `plane` contained in the filtered cloud is construted. 
+
+The outputs of this segmentation process are the points in the model for segemtation (the plane representing the table top in this case) and the coefficient of the polinomial expressing this model. Because the outliers in this plane segmentation are what represent the table top objects, the cloud cotains only these objects are extracted from the filtered cloud by
 ```
-
-Now that you have a workspace, clone or download this repo into the src directory of your workspace:
-```sh
-$ cd ~/catkin_ws/src
-$ git clone https://github.com/udacity/RoboND-Perception-Project.git
+ransac_objects = cloud_filtered.extract(inliers, negative=True)
 ```
-### Note: If you have the Kinematics Pick and Place project in the same ROS Workspace as this project, please remove the 'gazebo_grasp_plugin' directory from the `RoboND-Perception-Project/` directory otherwise ignore this note. 
+This cloud of objects is displayed in Fig.5.   
 
-Now install missing dependencies using rosdep install:
-```sh
-$ cd ~/catkin_ws
-$ rosdep install --from-paths src --ignore-src --rosdistro=kinetic -y
+![alt text][img5]
+
+*Fig.5 Objects segmented by RANSAC algorithm*
+
+## 2. Clustering for segmentation  
+After being filterd and segmented, the resulted cloud now contains only data points of table top objects. However, these data points currently does not represent any individual object because they are still mixed together. On the other word, those data points of the same object must be seperated from others. This is done by the Euclidean clustering algorithm. For the algorithm to be able to execute, the feature-rich objects cloud is converted to a white cloud which contains only spatial coordinates, then rearranged into a k-d tree.
+
+Next, the Euclidean algorithm's paramters are set.
 ```
-Build the project:
-```sh
-$ cd ~/catkin_ws
-$ catkin_make
+    extracted_cluster.set_ClusterTolerance(0.025)
+    extracted_cluster.set_MinClusterSize(50)
+    extracted_cluster.set_MaxClusterSize(1000)
+    extracted_cluster.set_SearchMethod(tree)
 ```
-Add following to your .bashrc file
+It is worth to notice that the _Cluster Tolerance_ plays a critical role in the accuracy of the clustering process. If it is too small, large object (like the buiscuit) can be divided into many clusters. On the other hand, if the Cluster Tolerance is too big, near by objects can be mixed in one cluster. 
+
+Finally, the clustering alogrithm is executed.
 ```
-export GAZEBO_MODEL_PATH=~/catkin_ws/src/RoboND-Perception-Project/pr2_robot/models:$GAZEBO_MODEL_PATH
+    cluster_indices = extracted_cluster.Extract()  # extract lists of points for each cluster.
 ```
+The command above returns a list. This list itself contains a number of lists, each of which associate with a cluster. The clustering result in displayed in Fig.6.
 
-If you haven’t already, following line can be added to your .bashrc to auto-source all new terminals
-```
-source ~/catkin_ws/devel/setup.bash
-```
+![alt text][img6]
 
-To run the demo:
-```sh
-$ cd ~/catkin_ws/src/RoboND-Perception-Project/pr2_robot/scripts
-$ chmod u+x pr2_safe_spawner.sh
-$ ./pr2_safe_spawner.sh
-```
-![demo-1](https://user-images.githubusercontent.com/20687560/28748231-46b5b912-7467-11e7-8778-3095172b7b19.png)
+*Fig.6 Clusters of table top objects in scene 1*
 
+## 3. Features extraction and  training SVM 
+### 3.1 Features extraction
+The features of the clustered cloud taken into account by the classification process are **objects' color histogram** and **normal direction histogram**. These two features are extracted from the cloud by `compute_color_histograms()` and `compute_normal_histograms()` in `./pr2_robot/scripts/features.py`
 
+The resulted histograms are created by `numpy` library's `histogram()`. The most important parameter of this function is the number of bins (`nbins`) which is the number of intervals that the range of value of interested feature is divided into. The larger this number is, the more detail the interested feature is. However, the increase of bins number leads to the increase of the data stored in feature histogram, hence the increase of computing effort.
 
-Once Gazebo is up and running, make sure you see following in the gazebo world:
-- Robot
+### 3.2 Train the SVM
+Using the objects' features prepared by the previous section (the color and normal direction histogram), a Support Vector Machine is employed to classify objects on the table top based on these features. The SVM's kernel is chosen to be `linear` and the number of folds of cross validation is set to `25` for the first two scenes and `5` for scene 3. For each scene, the SVM is trained with the training set consituted by `70` samples of each object in the scene. The confusion matrix of classification model using in each scene is plotted Fig.7-9.      
 
-- Table arrangement
+![alt text][img7]
 
-- Three target objects on the table
+*Fig.7 Confusion matrixes of Scene 1's model* 
 
-- Dropboxes on either sides of the robot
+![alt text][img8]
 
+*Fig.8 Confusion matrixes of Scene 2's model*
 
-If any of these items are missing, please report as an issue on [the waffle board](https://waffle.io/udacity/robotics-nanodegree-issues).
+![alt text][img9]
 
-In your RViz window, you should see the robot and a partial collision map displayed:
+*Fig.9 Confusion matrixes of Scene 3's model*
 
-![demo-2](https://user-images.githubusercontent.com/20687560/28748286-9f65680e-7468-11e7-83dc-f1a32380b89c.png)
+The results of objects recognition process performed by the models used in each scene are displayed in Fig.10-12.
 
-Proceed through the demo by pressing the ‘Next’ button on the RViz window when a prompt appears in your active terminal
+![alt text][img10]
 
-The demo ends when the robot has successfully picked and placed all objects into respective dropboxes (though sometimes the robot gets excited and throws objects across the room!)
+*Fig.10 Objects recognized by Scene 1's model*
 
-Close all active terminal windows using **ctrl+c** before restarting the demo.
+![alt text][img11]
 
-You can launch the project scenario like this:
-```sh
-$ roslaunch pr2_robot pick_place_project.launch
-```
-# Required Steps for a Passing Submission:
-1. Extract features and train an SVM model on new objects (see `pick_list_*.yaml` in `/pr2_robot/config/` for the list of models you'll be trying to identify). 
-2. Write a ROS node and subscribe to `/pr2/world/points` topic. This topic contains noisy point cloud data that you must work with.
-3. Use filtering and RANSAC plane fitting to isolate the objects of interest from the rest of the scene.
-4. Apply Euclidean clustering to create separate clusters for individual items.
-5. Perform object recognition on these objects and assign them labels (markers in RViz).
-6. Calculate the centroid (average in x, y and z) of the set of points belonging to that each object.
-7. Create ROS messages containing the details of each object (name, pick_pose, etc.) and write these messages out to `.yaml` files, one for each of the 3 scenarios (`test1-3.world` in `/pr2_robot/worlds/`).  See the example `output.yaml` for details on what the output should look like.  
-8. Submit a link to your GitHub repo for the project or the Python code for your perception pipeline and your output `.yaml` files (3 `.yaml` files, one for each test world).  You must have correctly identified 100% of objects from `pick_list_1.yaml` for `test1.world`, 80% of items from `pick_list_2.yaml` for `test2.world` and 75% of items from `pick_list_3.yaml` in `test3.world`.
-9. Congratulations!  Your Done!
+*Fig.11 Objects recognized by Scene 2's model*
 
-# Extra Challenges: Complete the Pick & Place
-7. To create a collision map, publish a point cloud to the `/pr2/3d_map/points` topic and make sure you change the `point_cloud_topic` to `/pr2/3d_map/points` in `sensors.yaml` in the `/pr2_robot/config/` directory. This topic is read by Moveit!, which uses this point cloud input to generate a collision map, allowing the robot to plan its trajectory.  Keep in mind that later when you go to pick up an object, you must first remove it from this point cloud so it is removed from the collision map!
-8. Rotate the robot to generate collision map of table sides. This can be accomplished by publishing joint angle value(in radians) to `/pr2/world_joint_controller/command`
-9. Rotate the robot back to its original state.
-10. Create a ROS Client for the “pick_place_routine” rosservice.  In the required steps above, you already created the messages you need to use this service. Checkout the [PickPlace.srv](https://github.com/udacity/RoboND-Perception-Project/tree/master/pr2_robot/srv) file to find out what arguments you must pass to this service.
-11. If everything was done correctly, when you pass the appropriate messages to the `pick_place_routine` service, the selected arm will perform pick and place operation and display trajectory in the RViz window
-12. Place all the objects from your pick list in their respective dropoff box and you have completed the challenge!
-13. Looking for a bigger challenge?  Load up the `challenge.world` scenario and see if you can get your perception pipeline working there!
+![alt text][img12]
 
-For all the step-by-step details on how to complete this project see the [RoboND 3D Perception Project Lesson](https://classroom.udacity.com/nanodegrees/nd209/parts/586e8e81-fc68-4f71-9cab-98ccd4766cfe/modules/e5bfcfbd-3f7d-43fe-8248-0c65d910345a/lessons/e3e5fd8e-2f76-4169-a5bc-5a128d380155/concepts/802deabb-7dbb-46be-bf21-6cb0a39a1961)
-Note: The robot is a bit moody at times and might leave objects on the table or fling them across the room :D
-As long as your pipeline performs succesful recognition, your project will be considered successful even if the robot feels otherwise!
+*Fig.12 Objects recognized by Scene 2's model*
